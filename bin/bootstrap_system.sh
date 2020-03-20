@@ -466,7 +466,11 @@ echo ">>> Checking out and building hadoop-lzo"
 : ${HADOOP_LZO_HOME:="${IMPALA_HOME}/../hadoop-lzo"}
 if ! [[ -d "$HADOOP_LZO_HOME" ]]
 then
-  git clone https://github.com/cloudera/hadoop-lzo.git "$HADOOP_LZO_HOME"
+  if [[ $ARCH_NAME == 'aarch64' ]]; then
+    git clone https://github.com/zhaorenhai/hadoop-lzo.git "$HADOOP_LZO_HOME"
+  else
+    git clone https://github.com/cloudera/hadoop-lzo.git "$HADOOP_LZO_HOME"
+  fi
 fi
 cd "$HADOOP_LZO_HOME"
 time -p ant package
