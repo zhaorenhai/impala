@@ -389,13 +389,17 @@ Status FilterContext::CodegenInsert(LlvmCodeGen* codegen, ScalarExpr* filter_exp
 
     // Call Insert() on the bloom filter.
     llvm::Function* insert_bloom_filter_fn;
+    #ifndef __aarch64__
     if (LlvmCodeGen::IsCPUFeatureEnabled(CpuInfo::AVX2)) {
       insert_bloom_filter_fn =
           codegen->GetFunction(IRFunction::BLOOM_FILTER_INSERT_AVX2, false);
     } else {
+    #endif
       insert_bloom_filter_fn =
           codegen->GetFunction(IRFunction::BLOOM_FILTER_INSERT_NO_AVX2, false);
+    #ifndef __aarch64__
     }
+    #endif
     DCHECK(insert_bloom_filter_fn != nullptr);
 
     llvm::Value* insert_args[] = {local_filter_arg, hash_value};

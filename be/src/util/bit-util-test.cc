@@ -134,6 +134,10 @@ TEST(BitUtil, TrailingBits) {
 void TestByteSwapSimd_Unit(const int64_t CpuFlag) {
   void (*bswap_fptr)(const uint8_t* src, uint8_t* dst) = NULL;
   int buf_size = 0;
+  #ifdef __aarch64__
+  buf_size = 16;
+  bswap_fptr = SimdByteSwap::ByteSwap128;
+  #else
   if (CpuFlag == CpuInfo::SSSE3) {
     buf_size = 16;
     bswap_fptr = SimdByteSwap::ByteSwap128;
@@ -143,6 +147,7 @@ void TestByteSwapSimd_Unit(const int64_t CpuFlag) {
     buf_size = 32;
     bswap_fptr = SimdByteSwap::ByteSwap256;
   }
+  #endif
 
   DCHECK(bswap_fptr != NULL);
   // IMPALA-4058: test that bswap_fptr works when it reads to o writes from memory with
@@ -179,15 +184,22 @@ void TestByteSwapSimd(const int64_t CpuFlag, const int buf_size) {
   std::iota(src_buf, src_buf + buf_size, 0);
 
   int start_size = 0;
+  #ifdef __aarch64__
+  start_size = 16;
+  #else
   if (CpuFlag == CpuInfo::SSSE3) {
     start_size = 16;
   } else if (CpuFlag == CpuInfo::AVX2) {
     start_size = 32;
   }
+  #endif
 
   for (int i = start_size; i < buf_size; ++i) {
     // Initialize dst buffer and swap i bytes.
     memset(dst_buf, 0, buf_size);
+    #ifdef __aarch64__
+    SimdByteSwap::ByteSwapSimd<16>(src_buf, i, dst_buf);
+    #else
     if (CpuFlag == CpuInfo::SSSE3) {
       SimdByteSwap::ByteSwapSimd<16>(src_buf, i, dst_buf);
     } else if (CpuFlag == CpuInfo::AVX2) {
@@ -197,6 +209,7 @@ void TestByteSwapSimd(const int64_t CpuFlag, const int buf_size) {
       ASSERT_EQ(CpuFlag, 0);
       BitUtil::ByteSwap(dst_buf, src_buf, i);
     }
+    #endif
 
     // Validate the swap results.
     for (int j = 0; j < i; ++j) {
@@ -231,6 +244,10 @@ TEST(BitUtil, ByteSwap) {
   EXPECT_EQ(BitUtil::ByteSwap(static_cast<uint16_t>(0)), 0);
   EXPECT_EQ(BitUtil::ByteSwap(static_cast<uint16_t>(0x1122)), 0x2211);
 
+  #ifdef __aarch64__
+  TestByteSwapSimd_Unit(0);
+  TestByteSwapSimd(0, 64);
+  #else
   // Tests for ByteSwap SIMD functions
   if (CpuInfo::IsSupported(CpuInfo::SSSE3)) {
     // Test SSSE3 functionality unit
@@ -245,6 +262,7 @@ TEST(BitUtil, ByteSwap) {
     // Test ByteSwapSimd() using AVX2;
     TestByteSwapSimd(CpuInfo::AVX2, 64);
   }
+  #endif
 
   // Test BitUtil::ByteSwap(Black Box Testing)
   for (int i = 0; i <= 32; ++i) TestByteSwapSimd(0, i);
@@ -307,6 +325,7 @@ TEST(BitUtil, RoundUpDown) {
   EXPECT_EQ(BitUtil::RoundDownNumi64(65), 1);
 }
 
+#ifndef __aarch64__
 // Prevent inlining so that the compiler can't optimize out the check.
 __attribute__((noinline))
 int CpuInfoIsSupportedHoistHelper(int64_t cpu_info_flag, int arg) {
@@ -329,6 +348,7 @@ TEST(BitUtil, CpuInfoIsSupportedHoist) {
   CpuInfo::TempDisable disable_sssse3(CPU_INFO_FLAG);
   EXPECT_EQ(12345, CpuInfoIsSupportedHoistHelper(CPU_INFO_FLAG, 0));
 }
+#endif
 
 }
 

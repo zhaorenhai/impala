@@ -19,6 +19,7 @@
 
 from string import Template
 import os
+import platform
 import shutil
 import filecmp
 import tempfile
@@ -218,7 +219,6 @@ ir_functions = [
   ["UNION_MATERIALIZE_BATCH",
   "_ZN6impala9UnionNode16MaterializeBatchEPNS_8RowBatchEPPh"],
   ["BLOOM_FILTER_INSERT_NO_AVX2", "_ZN6impala11BloomFilter12InsertNoAvx2Ej"],
-  ["BLOOM_FILTER_INSERT_AVX2", "_ZN6impala11BloomFilter10InsertAvx2Ej"],
   ["SELECT_NODE_COPY_ROWS", "_ZN6impala10SelectNode8CopyRowsEPNS_8RowBatchE"],
   ["BOOL_MIN_MAX_FILTER_INSERT", "_ZN6impala16BoolMinMaxFilter6InsertEPKv"],
   ["TINYINT_MIN_MAX_FILTER_INSERT", "_ZN6impala19TinyIntMinMaxFilter6InsertEPKv"],
@@ -237,6 +237,9 @@ ir_functions = [
   ["KRPC_DSS_HASH_AND_ADD_ROWS",
   "_ZN6impala20KrpcDataStreamSender14HashAndAddRowsEPNS_8RowBatchE"]
 ]
+
+if platform.processor() != "aarch64":
+  ir_functions += ["BLOOM_FILTER_INSERT_AVX2", "_ZN6impala11BloomFilter10InsertAvx2Ej"]
 
 enums_preamble = '\
 //\n\

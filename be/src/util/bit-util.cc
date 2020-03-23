@@ -17,8 +17,13 @@
 
 #include "util/bit-util.h"
 
-#include <emmintrin.h>
-#include <immintrin.h>
+#ifdef __aarch64__
+  #include "sse2neon.h"
+#else
+  #include <emmintrin.h>
+  #include <immintrin.h>
+#endif
+
 #include <ostream>
 
 namespace {
@@ -136,6 +141,12 @@ void SimdByteSwap::ByteSwapScalar(const void* source, int len, void* dest) {
   }
 }
 
+#ifdef __aarch64__
+const uint8x16_t mask128i = {15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0};
+inline void SimdByteSwap::ByteSwap128(const uint8_t* src, uint8_t* dst) {
+  vst1q_u8(dst, vqtbl1q_u8(vld1q_u8(src), mask128i));
+}
+#else
 // This constant is concluded from the definition of _mm_set_epi8;
 // Refer this link for more details:
 // https://software.intel.com/sites/landingpage/IntrinsicsGuide/
@@ -147,7 +158,11 @@ inline void SimdByteSwap::ByteSwap128(const uint8_t* src, uint8_t* dst) {
   _mm_storeu_si128(reinterpret_cast<__m128i*>(dst), _mm_shuffle_epi8(
       _mm_loadu_si128(reinterpret_cast<const __m128i*>(src)), mask128i));
 }
-
+#endif
+// Arm64 does not support AVX, but in future, arm64 have SVE. Now we just don't compile
+//  AVX related code on aarch64, it should not affect Impala funtion normally. In future,
+// we need to replace it with SVE.
+#ifndef __aarch64__
 // ByteSwap 32 bytes using AVX2 instructions.
 __attribute__((target("avx2")))
 inline void SimdByteSwap::ByteSwap256(const uint8_t* src, uint8_t* dst) {
@@ -164,7 +179,7 @@ inline void SimdByteSwap::ByteSwap256(const uint8_t* src, uint8_t* dst) {
   _mm_storeu_si128(reinterpret_cast<__m128i*>(dst + 16), part1);
   _mm256_zeroupper();
 }
-
+#endif
 // Internal implementation of ByteSwapSimd
 // TEMPLATE_DATA_WIDTH: 16byte or 32byte, corresponding to SSSE3 or AVX2 routine
 // SIMD_FUNC: function pointer to ByteSwapSSE_Unit(16byte) or ByteSwapAVX_Unit(32byte)
@@ -177,11 +192,15 @@ inline void SimdByteSwap::ByteSwapSimd(const void* source, const int len, void* 
     << "Only 16 or 32 are valid for TEMPLATE_DATA_WIDTH now.";
   /// Function pointer to SIMD ByteSwap functions
   void (*bswap_fptr)(const uint8_t* src, uint8_t* dst) = NULL;
+  #ifndef __aarch64__
   if (TEMPLATE_DATA_WIDTH == 16) {
+  #endif
     bswap_fptr = SimdByteSwap::ByteSwap128;
+  #ifndef __aarch64__
   } else if (TEMPLATE_DATA_WIDTH == 32) {
     bswap_fptr = SimdByteSwap::ByteSwap256;
   }
+  #endif
 
   const uint8_t* src = reinterpret_cast<const uint8_t*>(source);
   uint8_t* dst = reinterpret_cast<uint8_t*>(dest);
@@ -214,7 +233,9 @@ void BitUtil::ByteSwap(void* dest, const void* source, int len) {
   // Branch selection according to current CPU capacity and input data length
   if (LIKELY(len < 16)) {
     SimdByteSwap::ByteSwapScalar(source, len, dest);
-  } else if (len >= 32) {
+  }
+  #ifndef __aarch64__
+  else if (len >= 32) {
     // AVX2 can only be used to process data whose size >= 32byte
     if (CpuInfo::IsSupported(CpuInfo::AVX2)) {
       SimdByteSwap::ByteSwapSimd<32>(source, len, dest);
@@ -224,14 +245,20 @@ void BitUtil::ByteSwap(void* dest, const void* source, int len) {
     } else {
       SimdByteSwap::ByteSwapScalar(source, len, dest);
     }
-  } else {
+  }
+  #endif
+  else {
+    #ifndef __aarch64__
     // SSSE3 can only be used to process data whose size >= 16byte
     // 16 <= len < 32
     if (LIKELY(CpuInfo::IsSupported(CpuInfo::SSSE3))) {
+    #endif
       SimdByteSwap::ByteSwapSimd<16>(source, len, dest);
+    #ifndef __aarch64__
     } else {
       SimdByteSwap::ByteSwapScalar(source, len, dest);
     }
+    #endif
   }
 }
 

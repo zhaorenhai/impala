@@ -16,8 +16,11 @@
 // under the License.
 
 #include "util/bloom-filter.h"
-
-#include <emmintrin.h>
+#ifdef __aarch64__
+  #include "sse2neon.h"
+#else
+  #include <emmintrin.h>
+#endif
 #include <math.h>
 #include <string.h>
 
@@ -167,6 +170,10 @@ void BloomFilter::BucketInsert(const uint32_t bucket_idx, const uint32_t hash) n
   }
 }
 
+// Arm64 does not support AVX, but in future, arm64 have SVE. Now we just don't compile
+//  AVX related code on aarch64, it should not affect Impala funtion normally. In future,
+// we need to replace it with SVE.
+#ifndef __aarch64__
 __m256i BloomFilter::MakeMask(const uint32_t hash) {
    const __m256i ones = _mm256_set1_epi32(1);
    const __m256i rehash = _mm256_setr_epi32(IMPALA_BLOOM_HASH_CONSTANTS);
@@ -202,6 +209,7 @@ bool BloomFilter::BucketFindAVX2(
   _mm256_zeroupper();
   return result;
 }
+#endif
 
 bool BloomFilter::BucketFind(
     const uint32_t bucket_idx, const uint32_t hash) const noexcept {
@@ -217,6 +225,7 @@ bool BloomFilter::BucketFind(
 }
 
 namespace {
+#ifndef __aarch64__
 // Computes out[i] |= in[i] for the arrays 'in' and 'out' of length 'n' using AVX
 // instructions. 'n' must be a multiple of 32.
 void __attribute__((target("avx")))
@@ -231,6 +240,7 @@ OrEqualArrayAvx(size_t n, const uint8_t* __restrict__ in, uint8_t* __restrict__ 
         _mm256_or_pd(_mm256_loadu_pd(double_out), _mm256_loadu_pd(double_in)));
   }
 }
+#endif
 
 void OrEqualArray(size_t n, const uint8_t* __restrict__ in, uint8_t* __restrict__ out) {
   // The trivial loop out[i] |= in[i] should auto-vectorize with gcc at -O3, but it is not
@@ -239,9 +249,11 @@ void OrEqualArray(size_t n, const uint8_t* __restrict__ in, uint8_t* __restrict_
   //
   // TODO: Tune gcc flags to auto-vectorize the trivial loop instead of hand-vectorizing
   // it. This might not be possible.
+  #ifndef __aarch64__
   if (CpuInfo::IsSupported(CpuInfo::AVX)) {
     OrEqualArrayAvx(n, in, out);
   } else {
+  #endif
     const __m128i* simd_in = reinterpret_cast<const __m128i*>(in);
     const __m128i* const simd_in_end = reinterpret_cast<const __m128i*>(in + n);
     __m128i* simd_out = reinterpret_cast<__m128i*>(out);
@@ -254,7 +266,9 @@ void OrEqualArray(size_t n, const uint8_t* __restrict__ in, uint8_t* __restrict_
             simd_out, _mm_or_si128(_mm_loadu_si128(simd_out), _mm_loadu_si128(simd_in)));
       }
     }
+  #ifndef __aarch64__
   }
+  #endif
 }
 } // namespace
 
