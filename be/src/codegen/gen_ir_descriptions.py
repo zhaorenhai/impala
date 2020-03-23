@@ -19,6 +19,7 @@
 
 from string import Template
 import os
+import platform
 import shutil
 import filecmp
 import tempfile
@@ -240,6 +241,9 @@ ir_functions = [
   ["KRPC_DSS_HASH_AND_ADD_ROWS",
   "_ZN6impala20KrpcDataStreamSender14HashAndAddRowsEPNS_8RowBatchE"]
 ]
+
+if platform.processor() != "aarch64":
+  ir_functions += ["BLOOM_FILTER_INSERT_AVX2", "_ZN6impala11BloomFilter10InsertAvx2Ej"]
 
 enums_preamble = '\
 //\n\

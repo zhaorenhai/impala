@@ -155,6 +155,10 @@ void CpuInfo::Init() {
   } else {
     cycles_per_ms_ = 1000000;
   }
+  // On aarch64, there is neon which same as sse3.
+  #ifdef __aarch64__
+  hardware_flags_ |= ParseCPUFlags("sse3");
+  #endif
   original_hardware_flags_ = hardware_flags_;
 
   if (num_cores > 0) {
