@@ -129,11 +129,15 @@ class BitUtil {
 
   /// Returns the number of set bits in x
   static inline int Popcount(uint64_t x) {
+    #ifndef __aarch64__
     if (LIKELY(CpuInfo::IsSupported(CpuInfo::POPCNT))) {
       return POPCNT_popcnt_u64(x);
     } else {
+    #endif
       return PopcountNoHw(x);
+    #ifndef __aarch64__
     }
+    #endif
   }
 
   // Compute correct population count for various-width signed integers
