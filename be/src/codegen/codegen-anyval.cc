@@ -181,6 +181,93 @@ CodegenAnyVal CodegenAnyVal::CreateCallWrapped(LlvmCodeGen* cg, LlvmBuilder* bui
   return CodegenAnyVal(cg, builder, type, v, name);
 }
 
+#ifdef __aarch64__
+llvm::Value* CodegenAnyVal::ChangeRetType(LlvmCodeGen* codegen, const ColumnType type,
+    llvm::Value* result_val, LlvmBuilder& builder, std::string name) {
+  switch (type.type) {
+    case TYPE_BOOLEAN:
+      if (result_val->getType() == codegen->i64_type()) {
+        result_val = builder.CreateTrunc(result_val, codegen->i16_type(), name);
+      }
+      return result_val;
+    case TYPE_TINYINT:
+      if (result_val->getType() == codegen->i64_type()) {
+        result_val = builder.CreateTrunc(result_val, codegen->i16_type(), name);
+      }
+      return result_val;
+    case TYPE_SMALLINT:
+      if (result_val->getType() == codegen->i64_type()) {
+        result_val = builder.CreateTrunc(result_val, codegen->i32_type(), name);
+      }
+      return result_val;
+    case TYPE_BIGINT:
+      if (result_val->getType() == llvm::ArrayType::get(codegen->i64_type(), 2)) {
+        llvm::Type* struct_string_type =
+            llvm::StructType::get(codegen->i8_type(), codegen->i64_type());
+        llvm::Value* element0 = builder.CreateExtractValue(result_val, 0);
+        llvm::Value* element1 = builder.CreateExtractValue(result_val, 1);
+        result_val = llvm::UndefValue::get(struct_string_type);
+        element0 = builder.CreateTrunc(element0, codegen->i8_type());
+        result_val = builder.CreateInsertValue(result_val, element0, 0);
+        result_val = builder.CreateInsertValue(result_val, element1, 1, name);
+      }
+      return result_val;
+    case TYPE_DOUBLE:
+      if (result_val->getType() == llvm::ArrayType::get(codegen->i64_type(), 2)) {
+        llvm::Type* struct_string_type =
+            llvm::StructType::get(codegen->i8_type(), codegen->double_type());
+        llvm::Value* element0 = builder.CreateExtractValue(result_val, 0);
+        llvm::Value* element1 = builder.CreateExtractValue(result_val, 1);
+        result_val = llvm::UndefValue::get(struct_string_type);
+        element0 = builder.CreateTrunc(element0, codegen->i8_type());
+        element1 = builder.CreateBitCast(element1, codegen->double_type());
+        result_val = builder.CreateInsertValue(result_val, element0, 0);
+        result_val = builder.CreateInsertValue(result_val, element1, 1, name);
+      }
+      return result_val;
+    case TYPE_STRING:
+    case TYPE_VARCHAR:
+    case TYPE_FIXED_UDA_INTERMEDIATE:
+      if (result_val->getType() == llvm::ArrayType::get(codegen->i64_type(), 2)) {
+        llvm::Type* struct_string_type =
+            llvm::StructType::get(codegen->i64_type(), codegen->ptr_type());
+        llvm::Value* element0 = builder.CreateExtractValue(result_val, 0);
+        llvm::Value* element1 = builder.CreateExtractValue(result_val, 1);
+        result_val = llvm::UndefValue::get(struct_string_type);
+        element1 = builder.CreateIntToPtr(element1, codegen->ptr_type());
+        result_val = builder.CreateInsertValue(result_val, element0, 0);
+        result_val = builder.CreateInsertValue(result_val, element1, 1, name);
+      }
+      return result_val;
+    case TYPE_TIMESTAMP:
+      if (result_val->getType() == llvm::ArrayType::get(codegen->i64_type(), 2)) {
+        llvm::Type* struct_string_type =
+            llvm::StructType::get(codegen->i64_type(), codegen->i64_type());
+        llvm::Value* element0 = builder.CreateExtractValue(result_val, 0);
+        llvm::Value* element1 = builder.CreateExtractValue(result_val, 1);
+        result_val = llvm::UndefValue::get(struct_string_type);
+        result_val = builder.CreateInsertValue(result_val, element0, 0);
+        result_val = builder.CreateInsertValue(result_val, element1, 1, name);
+      }
+      return result_val;
+    default:
+      return result_val;
+  }
+}
+
+llvm::Value* CodegenAnyVal::CreateCallWithChangeRetType(LlvmCodeGen* cg,
+    LlvmBuilder* builder, llvm::Function* fn, ColumnType type,
+    llvm::ArrayRef<llvm::Value*> args, const char* name, llvm::Value* result_ptr) {
+  llvm::Value* v = CreateCall(cg, builder, fn, args, name);
+  llvm::Value* ret = ChangeRetType(cg, type, v, *builder, name);
+  if (result_ptr != NULL) {
+    builder->CreateStore(ret, result_ptr);
+    return NULL;
+  }
+  return ret;
+}
+#endif
+
 CodegenAnyVal::CodegenAnyVal(LlvmCodeGen* codegen, LlvmBuilder* builder,
     const ColumnType& type, llvm::Value* value, const char* name)
   : type_(type), value_(value), name_(name), codegen_(codegen), builder_(builder) {
@@ -326,10 +413,15 @@ llvm::Value* CodegenAnyVal::GetVal(const char* name) {
       // Lowered type is of form { i8, * }. Get the second value.
       return builder_->CreateExtractValue(value_, 1, name);
     case TYPE_DECIMAL: {
-      // Lowered type is of form { {i8}, [15 x i8], {i128} }. Get the i128 value and
-      // truncate it to the correct size. (The {i128} corresponds to the union of the
-      // different width int types.)
+#ifdef __aarch64__
+      // On aarch64, the Lowered type is of form { {i8}, {i128} }. No padding add.
+      uint32_t idxs[] = {1, 0};
+#else
+      // On x86-64, Lowered type is of form { {i8}, [15 x i8], {i128} }.
       uint32_t idxs[] = {2, 0};
+#endif
+      // Get the i128 value and truncate it to the correct size.
+      // (The {i128} corresponds to the union of the different width int types.)
       llvm::Value* val = builder_->CreateExtractValue(value_, idxs, name);
       return builder_->CreateTrunc(val,
           codegen_->GetSlotType(type_), name);
@@ -371,11 +463,17 @@ void CodegenAnyVal::SetVal(llvm::Value* val) {
       value_ = builder_->CreateInsertValue(value_, val, 1, name_);
       break;
     case TYPE_DECIMAL: {
-      // Lowered type is of the form { {i8}, [15 x i8], {i128} }. Set the i128 value to
-      // 'val'. (The {i128} corresponds to the union of the different width int types.)
+      //  Set the i128 value to 'val'.
+      //  (The {i128} corresponds to the union of the different width int types.)
       DCHECK_EQ(val->getType()->getIntegerBitWidth(), type_.GetByteSize() * 8);
       val = builder_->CreateSExt(val, llvm::Type::getIntNTy(codegen_->context(), 128));
+#ifdef __aarch64__
+      // On aarch64, the Lowered type is of form { {i8}, {i128} }. No padding add.
+      uint32_t idxs[] = {1, 0};
+#else
+      // On X86-64, the Lowered type is of the form { {i8}, [15 x i8], {i128} }
       uint32_t idxs[] = {2, 0};
+#endif
       value_ = builder_->CreateInsertValue(value_, val, idxs, name_);
       break;
     }

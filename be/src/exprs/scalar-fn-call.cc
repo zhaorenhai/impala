@@ -360,8 +360,13 @@ Status ScalarFnCall::GetCodegendComputeFnImpl(LlvmCodeGen* codegen, llvm::Functi
     llvm::Value* lowered_arg_val_ptr = builder.CreateBitCast(arg_val_ptr,
         CodegenAnyVal::GetLoweredPtrType(codegen, children_[i]->type()),
         "lowered_arg_val_ptr");
+#ifdef __aarch64__
+    CodegenAnyVal::CreateCallWithChangeRetType(codegen, &builder, child_fn,
+            children_[i]->type(), child_fn_args, "arg_val", lowered_arg_val_ptr);
+#else
     CodegenAnyVal::CreateCall(
         codegen, &builder, child_fn, child_fn_args, "arg_val", lowered_arg_val_ptr);
+#endif
   }
 
   if (vararg_start_idx_ != -1) {
@@ -377,8 +382,13 @@ Status ScalarFnCall::GetCodegendComputeFnImpl(LlvmCodeGen* codegen, llvm::Functi
   }
 
   // Call UDF
+#ifdef __aarch64__
+  llvm::Value* result_val = CodegenAnyVal::CreateCallWithChangeRetType(
+      codegen, &builder, udf, type_, udf_args, "result");
+#else
   llvm::Value* result_val =
       CodegenAnyVal::CreateCall(codegen, &builder, udf, udf_args, "result");
+#endif
   builder.CreateRet(result_val);
 
   *fn = codegen->FinalizeFunction(*fn);

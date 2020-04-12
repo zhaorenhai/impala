@@ -422,8 +422,13 @@ Status ScalarExpr::GetCodegendComputeFnWrapper(
   llvm::Value* this_ptr =
       codegen->CastPtrToLlvmPtr(codegen->GetStructPtrType<ScalarExpr>(), this);
   llvm::Value* compute_fn_args[] = {this_ptr, args[0], args[1]};
+#ifdef __aarch64__
+  llvm::Value* ret = CodegenAnyVal::CreateCallWithChangeRetType(
+      codegen, &builder, static_getval_fn, type(), compute_fn_args, "ret");
+#else
   llvm::Value* ret = CodegenAnyVal::CreateCall(
       codegen, &builder, static_getval_fn, compute_fn_args, "ret");
+#endif
   builder.CreateRet(ret);
   *fn = codegen->FinalizeFunction(*fn);
   if (UNLIKELY(*fn == nullptr)) {

@@ -92,6 +92,18 @@ class CodegenAnyVal {
       const ColumnType& type, llvm::Function* fn, llvm::ArrayRef<llvm::Value*> args,
       const char* name = "");
 
+#ifdef __aarch64__
+  /// Conversion function which converts val type between aarch64 and x86
+  static llvm::Value* ChangeRetType(LlvmCodeGen* codegen, const ColumnType type,
+      llvm::Value* result_val, LlvmBuilder& builder, std::string name);
+
+  /// Same as CreateCall but converts the result to x86 format from aarch64
+  static llvm::Value* CreateCallWithChangeRetType(LlvmCodeGen* cg,
+      LlvmBuilder* builder, llvm::Function* fn, ColumnType type,
+      llvm::ArrayRef<llvm::Value*> args, const char* name,
+      llvm::Value* result_ptr = nullptr);
+#endif
+
   /// Returns the lowered AnyVal type associated with 'type'.
   /// E.g.: TYPE_BOOLEAN (which corresponds to a BooleanVal) => i16
   static llvm::Type* GetLoweredType(LlvmCodeGen* cg, const ColumnType& type);
