@@ -79,6 +79,10 @@ SET(CXX_COVERAGE_FLAGS "-fprofile-arcs -ftest-coverage -DCODE_COVERAGE_ENABLED")
 #        destructors with 'override' which is enforced by clang by not recommended by c++
 #        core guidelines (read C.128).
 SET(CXX_CLANG_FLAGS "-Qunused-arguments -fcolor-diagnostics -Wno-unused-local-typedef")
+SET(CXX_CLANG_FLAGS "${CXX_CLANG_FLAGS} -fsigned-char")
+if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64")
+  SET(CXX_CLANG_FLAGS "${CXX_CLANG_FLAGS} -march=armv8-a+crc")
+endif()
 SET(CXX_CLANG_FLAGS "${CXX_CLANG_FLAGS} -Wno-zero-as-null-pointer-constant")
 SET(CXX_CLANG_FLAGS "${CXX_CLANG_FLAGS} -Wno-c++17-extensions")
 SET(CXX_CLANG_FLAGS "${CXX_CLANG_FLAGS} -Wno-inconsistent-missing-destructor-override")
@@ -231,10 +235,11 @@ add_definitions(-DKUDU_HEADERS_USE_RICH_SLICE -DKUDU_HEADERS_NO_STUBS)
 #  -DBOOST_NO_EXCEPTIONS: call a custom error handler for exceptions in codegen'd code.
 set(CLANG_IR_CXX_FLAGS "-emit-llvm" "-c" "-std=c++14" "-DIR_COMPILE" "-DHAVE_INTTYPES_H"
   "-DHAVE_NETINET_IN_H" "-DBOOST_DATE_TIME_POSIX_TIME_STD_CONFIG" "-DBOOST_NO_EXCEPTIONS"
-  "-fcolor-diagnostics" "-Wno-deprecated" "-Wno-return-type-c-linkage" "-O1")
+  "-fcolor-diagnostics" "-fsigned-char" "-Wno-deprecated" "-Wno-return-type-c-linkage" "-O1")
 
 if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64")
-  set(CLANG_IR_CXX_FLAGS "${CLANG_IR_CXX_FLAGS}" "-DCACHELINESIZE_AARCH64=${CACHELINESIZE_AARCH64}")
+  set(CLANG_IR_CXX_FLAGS "${CLANG_IR_CXX_FLAGS}" "-march=armv8-a+crc"
+    "-DCACHELINESIZE_AARCH64=${CACHELINESIZE_AARCH64}")
 endif()
 
 # -Werror: compile warnings should be errors when using the toolchain compiler.
