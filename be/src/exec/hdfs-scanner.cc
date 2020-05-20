@@ -423,6 +423,7 @@ Status HdfsScanner::CodegenWriteCompleteTuple(const HdfsScanPlanNode* node,
   // needed and that at the end of the materialize loop, the conjunct has everything
   // it needs (either from this iteration or previous iterations).
   builder.SetInsertPoint(parse_block);
+  llvm::Function* printPtrFn = codegen->GetFunction(IRFunction::PRINT_TUPLE, false);
   for (int conjunct_idx = 0; conjunct_idx <= conjuncts.size(); ++conjunct_idx) {
     for (int slot_idx = 0; slot_idx < materialize_order.size(); ++slot_idx) {
       // If they don't match, it means either the slot has already been
@@ -473,11 +474,18 @@ Status HdfsScanner::CodegenWriteCompleteTuple(const HdfsScanPlanNode* node,
       llvm::Function* slot_fn = slot_fns[slot_idx];
       llvm::Value* slot_parsed = builder.CreateCall(
           slot_fn, llvm::ArrayRef<llvm::Value*>({tuple_arg, data, len}));
+      vector<llvm::Value*> calling_args;
+      calling_args.push_back(opaque_tuple_arg);
+      builder.CreateCall(printPtrFn, calling_args);
       llvm::Value* slot_error = builder.CreateNot(slot_parsed, "slot_parse_error");
       error_in_row = builder.CreateOr(error_in_row, slot_error, "error_in_row");
       slot_error = builder.CreateZExt(slot_error, codegen->i8_type());
       builder.CreateStore(slot_error, error_ptr);
     }
+    codegen->CodegenDebugTrace(&builder, "Out loop\n");
+    vector<llvm::Value*> calling_args2;
+    calling_args2.push_back(opaque_tuple_arg);
+    builder.CreateCall(printPtrFn, calling_args2);
 
     if (conjunct_idx == conjuncts.size()) {
       // In this branch, we've just materialized slots not referenced by any conjunct.

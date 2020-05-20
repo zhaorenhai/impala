@@ -706,7 +706,8 @@ void SlotDescriptor::CodegenSetNullIndicator(
     llvm::Value* bit_only = builder->CreateAnd(sign_extended_null, mask, "null_bit");
     result = builder->CreateOr(byte_with_cleared_bit, bit_only, "null_bit_set");
   }
-
+  codegen->CodegenDebugTrace(builder, "CodegenSetNullIndicator:result %d \n", result);
+  codegen->CodegenDebugTrace(builder, "CodegenSetNullIndicator:null_byte_ptr %p \n", null_byte_ptr);
   builder->CreateStore(result, null_byte_ptr);
 }
 
@@ -714,7 +715,8 @@ llvm::Value* SlotDescriptor::CodegenGetNullByte(
     LlvmCodeGen* codegen, LlvmBuilder* builder,
     const NullIndicatorOffset& null_indicator_offset, llvm::Value* tuple,
     llvm::Value** null_byte_ptr) {
-  llvm::Constant* byte_offset =
+  codegen->CodegenDebugTrace(builder, (std::string("CodegenGetNullByte: null_indicator_offset.byte_offset: ") + std::to_string(null_indicator_offset.byte_offset) + std::string("\n")).data());
+  llvm::Constant* byte_offset =  
       codegen->GetI32Constant(null_indicator_offset.byte_offset);
   llvm::Value* tuple_bytes = builder->CreateBitCast(tuple, codegen->ptr_type());
   llvm::Value* byte_ptr =

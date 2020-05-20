@@ -27,7 +27,7 @@
 #include "text-converter.h"
 #include "util/string-parser.h"
 #include "util/runtime-profile-counters.h"
-
+#include <iostream>
 #include "common/names.h"
 
 using namespace impala;
@@ -140,7 +140,11 @@ Status TextConverter::CodegenWriteSlot(LlvmCodeGen* codegen,
   LlvmBuilder builder(codegen->context());
   llvm::Value* args[3];
   *fn = prototype.GeneratePrototype(&builder, &args[0]);
-
+  llvm::PointerType* tuple_opaque_ptr_type = codegen->GetStructPtrType<Tuple>();
+  llvm::Value* tuple_opaque = builder.CreateBitCast(args[0], tuple_opaque_ptr_type, "tuple_opaque_ptr");
+  codegen->CodegenDebugTrace(&builder, "\nCodegenWriteSlot:Enter function codegenwriteslot\n");
+  codegen->CodegenDebugTrace(&builder, "CodegenWriteSlot:arg1: %s \n", args[1]);
+  codegen->CodegenDebugTrace(&builder, "CodegenWriteSlot:arg2: %d \n", args[2]);
   llvm::BasicBlock *set_null_block, *parse_slot_block, *check_zero_block = NULL;
   codegen->CreateIfElseBlocks(*fn, "set_null", "parse_slot",
       &set_null_block, &parse_slot_block);
@@ -153,9 +157,11 @@ Status TextConverter::CodegenWriteSlot(LlvmCodeGen* codegen,
   llvm::Value* is_null;
   if (check_null) {
     if (is_default_null) {
+      codegen->CodegenDebugTrace(&builder, "CodegenWriteSlot:Check null is default null\n");
       is_null = builder.CreateCall(
           is_null_string_fn, llvm::ArrayRef<llvm::Value*>({args[1], args[2]}));
     } else {
+      codegen->CodegenDebugTrace(&builder, "CodegenWriteSlot:Check null is generic null\n");
       is_null = builder.CreateCall(is_null_string_fn,
           llvm::ArrayRef<llvm::Value*>(
               {args[1], args[2], codegen->CastPtrToLlvmPtr(codegen->ptr_type(),
@@ -163,6 +169,7 @@ Status TextConverter::CodegenWriteSlot(LlvmCodeGen* codegen,
                   codegen->GetI32Constant(len)}));
     }
   } else {
+    codegen->CodegenDebugTrace(&builder, "CodegenWriteSlot: no check null\n");
     // Constant FALSE as branch condition. We rely on later optimization passes
     // to remove the branch and THEN block.
     is_null = codegen->false_value();
@@ -175,15 +182,24 @@ Status TextConverter::CodegenWriteSlot(LlvmCodeGen* codegen,
     // If len == 0 and it is not a string col, set slot to NULL
     llvm::Value* null_len =
         builder.CreateICmpEQ(args[2], codegen->GetI32Constant(0));
+    codegen->CodegenDebugTrace(&builder, "CodegenWriteSlot:null_len: %d \n", null_len);
     builder.CreateCondBr(null_len, set_null_block, parse_slot_block);
   }
-
+  
   // Codegen parse slot block
   builder.SetInsertPoint(parse_slot_block);
+  codegen->CodegenDebugTrace(&builder, "CodegenWriteSlot:beforeCreateStructGEP\n");
+  llvm::Function* printPtrFn = codegen->GetFunction(IRFunction::PRINT_TUPLE, false);
+  vector<llvm::Value*> calling_args2;
+  calling_args2.push_back(tuple_opaque);
+  builder.CreateCall(printPtrFn, calling_args2);
+  
   llvm::Value* slot =
       builder.CreateStructGEP(NULL, args[0], slot_desc->llvm_field_idx(), "slot");
-
+  codegen->CodegenDebugTrace(&builder, "CodegenWriteSlot:afterCreateStructGEP\n");
+  builder.CreateCall(printPtrFn, calling_args2);
   if (slot_desc->type().IsVarLenStringType()) {
+    codegen->CodegenDebugTrace(&builder, "CodegenWriteSlot:ParseSlot:VarLenStringType\n");
     llvm::Value* ptr = builder.CreateStructGEP(NULL, slot, 0, "string_ptr");
     llvm::Value* len = builder.CreateStructGEP(NULL, slot, 1, "string_len");
 
@@ -191,6 +207,7 @@ Status TextConverter::CodegenWriteSlot(LlvmCodeGen* codegen,
     // TODO codegen memory allocation for CHAR
     DCHECK(slot_desc->type().type != TYPE_CHAR);
     if (slot_desc->type().type == TYPE_VARCHAR) {
+      codegen->CodegenDebugTrace(&builder, "CodegenWriteSlot:ParseSlot:VarLenStringType,TYPE_VARCHAR\n");
       // determine if we need to truncate the string
       llvm::Value* maxlen = codegen->GetI32Constant(slot_desc->type().len);
       llvm::Value* len_lt_maxlen =
@@ -198,7 +215,9 @@ Status TextConverter::CodegenWriteSlot(LlvmCodeGen* codegen,
       llvm::Value* minlen =
           builder.CreateSelect(len_lt_maxlen, args[2], maxlen, "select_min_len");
       builder.CreateStore(minlen, len);
+      codegen->CodegenDebugTrace(&builder, "CodegenWriteSlot:ParseSlot:VarLenStringType,TYPE_VARCHAR,minlen: %d \n", minlen);
     } else {
+      codegen->CodegenDebugTrace(&builder, "CodegenWriteSlot:ParseSlot:VarLenStringType,not TYPE_VARCHAR\n");
       builder.CreateStore(args[2], len);
     }
     builder.CreateRet(codegen->true_value());
@@ -257,14 +276,15 @@ Status TextConverter::CodegenWriteSlot(LlvmCodeGen* codegen,
     }
     parse_fn = codegen->GetFunction(parse_fn_enum, false);
     DCHECK(parse_fn != NULL);
-
+    codegen->CodegenDebugTrace(&builder, (std::string("CodegenWriteSlot:ParseSlot:notVarLenStringType:parse_fn:") + parse_fn->getName().str() + std::string("\n")).data());
     // Set up trying to parse the string to the slot type
     llvm::BasicBlock *parse_success_block, *parse_failed_block;
     codegen->CreateIfElseBlocks(*fn, "parse_success", "parse_fail",
         &parse_success_block, &parse_failed_block);
     LlvmCodeGen::NamedVariable parse_result("parse_result", codegen->i32_type());
     llvm::Value* parse_result_ptr = codegen->CreateEntryBlockAlloca(*fn, parse_result);
-
+    codegen->CodegenDebugTrace(&builder, "CodegenWriteSlot:afterCreateEntryBlockAlloca\n");
+    builder.CreateCall(printPtrFn, calling_args2);
     llvm::CallInst* parse_return;
     // Call Impala's StringTo* function
     // Function implementations in exec/hdfs-scanner-ir.cc
@@ -273,6 +293,8 @@ Status TextConverter::CodegenWriteSlot(LlvmCodeGen* codegen,
       parse_return = builder.CreateCall(parse_fn, {args[1], args[2],
           codegen->GetI32Constant(slot_desc->type().precision),
           codegen->GetI32Constant(slot_desc->type().scale), parse_result_ptr});
+    codegen->CodegenDebugTrace(&builder, "CodegenWriteSlot:afterCallParse_fn\n");
+    builder.CreateCall(printPtrFn, calling_args2);
     } else if (slot_desc->type().type == TYPE_TIMESTAMP) {
       // If the return value is large (more than 16 bytes in our toolchain) the first
       // parameter would be a pointer to value parsed and the return value of callee
@@ -302,18 +324,29 @@ Status TextConverter::CodegenWriteSlot(LlvmCodeGen* codegen,
     // Parse succeeded
     builder.SetInsertPoint(parse_success_block);
     // If the parsed value is in parse_return, move it into slot
-#ifdef __aarch64__
-    if (slot_desc->type().type == TYPE_DECIMAL || slot_desc->type().type == TYPE_DATE) {
-#else
     if (slot_desc->type().type == TYPE_DECIMAL) {
-#endif
+#ifdef __aarch64__      
+      // On aarch64, the 4 bytes decimal still return i64 type, so here truncing is need
+      if (slot_desc->slot_size() == 4) {
+        llvm::Value* temp_slot = builder.CreateTrunc(parse_return, codegen->i32_type());
+        builder.CreateStore(temp_slot, slot);
+      } else {
+        builder.CreateStore(parse_return, slot);
+      }
+#else
       // For Decimal values, the return type generated by Clang is struct type rather than
-      // integer so casting is necessary
-      // On aarch64, for Date Values, the return type generated by Clang is i64, not i32,
-      // so casting is necessary.
+      // integer so casting is necessary      
       llvm::Value* cast_slot =
           builder.CreateBitCast(slot, parse_return->getType()->getPointerTo());
       builder.CreateStore(parse_return, cast_slot);
+#endif      
+#ifdef __aarch64__
+    } else if (slot_desc->type().type == TYPE_DATE) {
+      // On aarch64, for Date Values, the return type generated by Clang is i64, not i32,
+      // so truncing is necessary.
+      llvm::Value* temp_slot = builder.CreateTrunc(parse_return, codegen->i32_type());
+      builder.CreateStore(temp_slot, slot);
+#endif
     } else if (slot_desc->type().type != TYPE_TIMESTAMP) {
       builder.CreateStore(parse_return, slot);
     }
@@ -321,12 +354,14 @@ Status TextConverter::CodegenWriteSlot(LlvmCodeGen* codegen,
 
     // Parse failed, set slot to null and return false
     builder.SetInsertPoint(parse_failed_block);
+    codegen->CodegenDebugTrace(&builder, "CodegenWriteSlot:parse failed,goto set null indicator\n");
     slot_desc->CodegenSetNullIndicator(codegen, &builder, args[0], codegen->true_value());
     builder.CreateRet(codegen->false_value());
   }
 
   // Case where data is \N or len == 0 and it is not a string col
   builder.SetInsertPoint(set_null_block);
+  codegen->CodegenDebugTrace(&builder, "CodegenWriteSlot:enter set null block directly\n");
   slot_desc->CodegenSetNullIndicator(codegen, &builder, args[0], codegen->true_value());
   builder.CreateRet(codegen->true_value());
 

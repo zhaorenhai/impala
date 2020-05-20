@@ -25,7 +25,7 @@
 #include "runtime/descriptors.h"
 #include "runtime/mem-pool.h"
 #include "util/ubsan.h"
-
+#include <iostream>
 namespace llvm {
 class Function;
 class Constant;
@@ -247,6 +247,11 @@ class Tuple {
   bool IsNull(const NullIndicatorOffset& offset) const {
     const char* null_indicator_byte =
         reinterpret_cast<const char*>(this) + offset.byte_offset;
+    std::cout << "IsNull:reinterpret_cast<const char*>(this):" << static_cast<const void *>(reinterpret_cast<const char*>(this)) << std::endl;
+    std::cout << "IsNull:offset.byte_offset:" << offset.byte_offset + 0 << std::endl;
+    std::cout << "IsNull:*null_indicator_byte:" << *null_indicator_byte + 0 << std::endl;
+    std::cout << "IsNull:offset.bit_mask:" << offset.bit_mask + 0 << std::endl;
+    std::cout << "IsNull:(*null_indicator_byte & offset.bit_mask):" << (*null_indicator_byte & offset.bit_mask)  << std::endl;
     return (*null_indicator_byte & offset.bit_mask) != 0;
   }
 

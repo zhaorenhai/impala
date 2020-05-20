@@ -16,7 +16,7 @@
 // under the License.
 
 #include "runtime/tuple.h"
-
+#include <iostream>
 #include "runtime/string-value.h"
 
 namespace impala {
@@ -26,14 +26,19 @@ bool Tuple::CopyStrings(const char* err_ctx, RuntimeState* state,
     Status* status) noexcept {
   int64_t total_len = 0;
   for (int i = 0; i < num_string_slots; ++i) {
+    std::cout << "CopyStrings:iiiiiiiiiiiiii:" << i << std::endl;
     if (IsNull(string_slot_offsets[i].null_indicator_offset)) continue;
-    total_len += GetStringSlot(string_slot_offsets[i].tuple_offset)->len;
+    StringValue* strv = GetStringSlot(string_slot_offsets[i].tuple_offset);
+    std::cout << "CopyStrings:strv->len:"<< strv->len << std::endl;
+    std::cout << "CopyStrings:strv->ptr:"<< strv->ptr << std::endl;
+    total_len += strv->len;
   }
   char* buf = AllocateStrings(err_ctx, state, total_len, pool, status);
   if (UNLIKELY(buf == nullptr)) return false;
   for (int i = 0; i < num_string_slots; ++i) {
     if (IsNull(string_slot_offsets[i].null_indicator_offset)) continue;
     StringValue* sv = GetStringSlot(string_slot_offsets[i].tuple_offset);
+    if (NULL == sv->ptr || sv->len < 0) continue;
     int str_len = sv->len;
     memcpy(buf, sv->ptr, str_len);
     sv->ptr = buf;

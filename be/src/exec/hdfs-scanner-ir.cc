@@ -20,7 +20,7 @@
 #include "util/string-parser.h"
 #include "runtime/string-value.inline.h"
 #include "runtime/tuple.h"
-
+#include <iostream>
 #include "common/names.h"
 
 using namespace impala;
@@ -86,6 +86,10 @@ int HdfsScanner::WriteAlignedTuples(MemPool* pool, TupleRow* tuple_row,
 
 ScalarExprEvaluator* HdfsScanner::GetConjunctEval(int idx) const {
   return (*conjunct_evals_)[idx];
+}
+
+void printTuple(Tuple* tuple) {
+  std::cout << "printTuple:" << *(reinterpret_cast<const char*>(tuple) + 292) + 0 << std::endl;
 }
 
 void StringToDecimalSymbolDummy() {
@@ -184,11 +188,27 @@ Decimal16Value IrStringToDecimal16(const char* s, int len, int type_precision,
 
 extern "C"
 bool IrIsNullString(const char* data, int len) {
+  printf("\nEnter Function IrIsNullString\n");
+  printf("IrIsNullString:data: %s \n", data);
+  printf("IrIsNullString:len: %d \n", len);
   return data == NULL || (len == 2 && data[0] == '\\' && data[1] == 'N');
 }
 
 extern "C"
 bool IrGenericIsNullString(const char* s, int slen, const char* n, int nlen) {
+  printf("\nEnter Function IrGenericIsNullString\n");
+  printf("IrGenericIsNullString:s: %s \n", s);
+  printf("IrGenericIsNullString:slen: %d \n", slen);
+  printf("IrGenericIsNullString:n: %s \n", n);
+  printf("IrGenericIsNullString:nlen: %d \n", nlen);
+  printf("IrGenericIsNullString:s == NULL: %d \n", s == NULL);
+  printf("IrGenericIsNullString:slen == nlen: %d \n", slen == nlen);
+  printf("IrGenericIsNullString:StringCompare(s, slen, n, nlen, slen): %d \n", StringCompare(s, slen, n, nlen, slen));
   return s == NULL || (slen == nlen && StringCompare(s, slen, n, nlen, slen) == 0);
+}
+
+extern "C"
+void IrPrintPtr(const char* ptr) {
+  printf("IrPrintPtr:*ptr: %d \n", *ptr + 0);
 }
 #endif
