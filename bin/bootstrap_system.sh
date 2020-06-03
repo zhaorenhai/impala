@@ -461,7 +461,9 @@ fi
 
 echo -e "\n$SET_JAVA_HOME" >> "${IMPALA_HOME}/bin/impala-config-local.sh"
 eval "$SET_JAVA_HOME"
-
+if [[ $ARCH_NAME == 'aarch64' ]]; then
+  echo -e "\nexport SKIP_TOOLCHAIN_BOOTSTRAP=true" >> "${IMPALA_HOME}/bin/impala-config-local.sh"
+fi
 # Assert that we have a java available
 test -f $JAVA_HOME/bin/java
 
